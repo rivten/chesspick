@@ -6,8 +6,19 @@ const html = htm.bind(h);
 class App extends Component {
     state = {}
 
-    onClick = ev => {
-        console.log(ev.target.getAttribute("data-pick"));
+    onClick = async ev => {
+        const pick = ev.target.getAttribute("data-pick");
+        if (pick === undefined) {
+            console.error("invalid pick");
+        } else {
+            const url = "/api/pick";
+            const response = await fetch(url, {
+                method: "POST",
+                body: pick,
+            });
+            console.log(response.json());
+        }
+
         ev.preventDefault()
     }
 
