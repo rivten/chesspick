@@ -11,6 +11,7 @@ static constexpr int BACKLOG = 10;
 static constexpr int RECV_BUFFER_SIZE = 1024;
 
 int main() {
+#if 0
     struct addrinfo hints;
     struct addrinfo *servinfo;
     memset(&hints, 0, sizeof(hints));
@@ -50,24 +51,32 @@ int main() {
         std::cerr << "[ERROR] server failed to bind\n";
         std::exit(1);
     }
-
     if (listen(sockfd, BACKLOG) == -1) {
         std::cerr << "[ERROR] server failed to listen\n";
     }
+#else
+    int sockfd = 0;
+#endif
     
     std::cerr << "[INFO] server waiting for connections\n";
 
     while (true) {
+        std::cerr << "[VERBOSE] server waiting for a connection\n";
         struct sockaddr_storage their_addr;
         socklen_t sin_size = sizeof(their_addr);
         int fd = accept(sockfd, reinterpret_cast<struct sockaddr*>(&their_addr), &sin_size);
         if (fd == -1) {
             std::cerr << "[ERROR] server failed to accept\n";
         }
+        std::cerr << "[VERBOSE] server received a connection\n";
 
         char recv_buffer[RECV_BUFFER_SIZE];
         for (int recv_count; (recv_count = recv(fd, &recv_buffer, RECV_BUFFER_SIZE, 0)) != 0;) {
-            std::cout << recv_buffer;
+            std::cerr << "[VERBOSE] data received\n";
+            std::cerr << recv_count << '\n';
+            for (int i = 0; i < recv_count; ++i) {
+                std::cerr << std::hex << static_cast<int>(recv_buffer[i]);
+            }
             memset(&recv_buffer, 0, RECV_BUFFER_SIZE);
         }
     }
