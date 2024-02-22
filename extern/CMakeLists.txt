@@ -7,4 +7,4 @@ add_library(fcgi STATIC
     $<$<PLATFORM_ID:Linux>:fcgi2/libfcgi/os_unix.c>
     $<$<PLATFORM_ID:Windows>:fcgi2/libfcgi/os_win32.c>)
 
-target_include_directories(fcgi INTERFACE fcgi2/include)
+target_include_directories(fcgi PUBLIC fcgi2/include)
