@@ -16,7 +16,7 @@ class App extends Component {
                 method: "POST",
                 body: pick,
             });
-            console.log(response.json());
+            console.log(await response.json());
         }
 
         ev.preventDefault()
