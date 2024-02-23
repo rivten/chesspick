@@ -6,6 +6,7 @@
 #include <cstring>
 #include <string>
 #include <unordered_map>
+#include <format>
 
 extern char** environ;
 
@@ -43,7 +44,12 @@ struct Request {
     std::string script_name;
     std::string content_type;
     std::string accept;
+};
 
+struct Response {
+    std::string content_type;
+    size_t status;
+    std::string content;
 };
 
 static HttpMethod parse_http_method(const char* method_str) {
@@ -66,6 +72,21 @@ static HttpMethod parse_http_method(const char* method_str) {
         return HttpMethod::Head;
     }
     assert(false);
+}
+
+Response handle_request(Request request) {
+    if (request.script_name == "/api/pick") {
+        return Response {
+            "application/json",
+            201,
+            std::format("\"{}\"", request.content),
+        };
+    }
+    return Response {
+        "application/json",
+        404,
+        {},
+    };
 }
 
 int main() {
@@ -97,7 +118,9 @@ int main() {
             std::string(accept),
         };
 
-        FCGI_printf("Content-Type: application/json\r\nStatus: 200\r\n\r\n{\"hello\":\"world\"}\n");
+        Response response = handle_request(std::move(request));
+
+        FCGI_printf("Content-Type: %s\r\nStatus: %u\r\n\r\n%s\n", response.content_type.c_str(), response.status, response.content.c_str());
     }
     return 0;
 }
