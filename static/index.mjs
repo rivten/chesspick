@@ -27,6 +27,9 @@ class App extends Component {
             <h1>Hello !</h1>
             <button type="button" onClick=${this.onClick} data-pick="white">Pick white</button>
             <button type="button" onClick=${this.onClick} data-pick="black">Pick black</button>
+            <form action="/api/login" method="get">
+                <input type="submit" value="Login" />
+            </form>
         `;
     }
 }

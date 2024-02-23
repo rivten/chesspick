@@ -7,6 +7,7 @@
 #include <string>
 #include <unordered_map>
 #include <format>
+#include <sstream>
 
 extern char** environ;
 
@@ -47,8 +48,8 @@ struct Request {
 };
 
 struct Response {
-    std::string content_type;
     size_t status;
+    std::unordered_map<std::string, std::string> headers;
     std::string content;
 };
 
@@ -77,14 +78,23 @@ static HttpMethod parse_http_method(const char* method_str) {
 Response handle_request(Request request) {
     if (request.script_name == "/api/pick") {
         return Response {
-            "application/json",
             201,
+            {{"Content-Type", "application/json"}},
             std::format("\"{}\"", request.content),
         };
     }
+
+    if (request.script_name == "/api/login") {
+        return Response {
+            302,
+            {{"Location", "https://lichess.org"}},
+            {},
+        };
+    }
+
     return Response {
-        "application/json",
         404,
+        {},
         {},
     };
 }
@@ -97,30 +107,39 @@ int main() {
         const char* accept = std::getenv("HTTP_ACCEPT");
         const char* content_type = std::getenv("CONTENT_TYPE");
         const char* content_length_str = std::getenv("CONTENT_LENGTH");
-        const long content_length = std::strtol(content_length_str, nullptr, 10);
 
-        if (content_length > 0) {
-            memset(buffer, 0, BUFFER_SIZE);
-            std::cerr << "received " << content_length << '\n';
-            assert(content_length < BUFFER_SIZE);
-            size_t bytes_read = FCGI_fread(buffer, 1, content_length, FCGI_stdin);
-            assert((long)bytes_read == content_length);
-            std::cerr << buffer << '\n';
+        if (content_length_str != nullptr) {
+            const long content_length = std::strtol(content_length_str, nullptr, 10);
+
+            if (content_length > 0) {
+                memset(buffer, 0, BUFFER_SIZE);
+                std::cerr << "received " << content_length << '\n';
+                assert(content_length < BUFFER_SIZE);
+                size_t bytes_read = FCGI_fread(buffer, 1, content_length, FCGI_stdin);
+                assert((long)bytes_read == content_length);
+                std::cerr << buffer << '\n';
+            }
         }
 
         Request request {
             parse_http_method(request_method),
-            std::string(buffer),
+            content_length_str ? std::string(buffer) : "",
             get_headers(),
-            std::string(query_string),
-            std::string(script_name),
-            std::string(content_type),
-            std::string(accept),
+            query_string ? std::string(query_string) : "",
+            script_name ? std::string(script_name) : "",
+            content_type ? std::string(content_type) : "",
+            accept ? std::string(accept) : "",
         };
 
         Response response = handle_request(std::move(request));
 
-        FCGI_printf("Content-Type: %s\r\nStatus: %u\r\n\r\n%s\n", response.content_type.c_str(), response.status, response.content.c_str());
+        std::ostringstream response_headers;
+
+        for (auto& [header_name, header_value]: response.headers) {
+            response_headers << header_name << ":" << header_value;
+        }
+
+        FCGI_printf("Status: %u\r\n%s\r\n\r\n%s\n", response.status, response_headers.str().c_str(), response.content.c_str());
     }
     return 0;
 }
