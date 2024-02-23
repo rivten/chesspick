@@ -1,3 +1,5 @@
 static/preact.mjs
 static/htm.mjs
 build/
+extern/*
+!extern/fcgi_config.h
