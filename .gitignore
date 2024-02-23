@@ -1,5 +1,6 @@
 static/preact.mjs
 static/htm.mjs
 build/
-extern/*
-!extern/fcgi_config.h
+extern/curl-8.6.0
+extern/fcgi2-2.4.2
+extern/sqlite-amalgamation-3450100
