@@ -9,10 +9,17 @@
 #include <format>
 #include <sstream>
 
+#include <sqlite3.h>
+
+#define CLIENT_ID "rivten.chesspick"
+#define LICHESS_LOGIN_REDIRECT_URI "http://localhost:8080/api/lichess-callback"
+
 extern char** environ;
 
 #define BUFFER_SIZE 1024
 char buffer[BUFFER_SIZE];
+
+sqlite3* connection;
 
 static std::unordered_map<std::string, std::string> get_headers() {
     std::unordered_map<std::string, std::string> headers;
@@ -73,6 +80,8 @@ static HttpMethod parse_http_method(const char* method_str) {
         return HttpMethod::Head;
     }
     assert(false);
+    // TODO: fail ?
+    return HttpMethod::Get;
 }
 
 Response handle_request(Request request) {
@@ -85,10 +94,25 @@ Response handle_request(Request request) {
     }
 
     if (request.script_name == "/api/login") {
+        std::ostringstream redirection;
+        int code_challenge = 0;
+        redirection << "https://lichess.org/oauth?response_type=code&client_id=" 
+            << CLIENT_ID << "&redirect_uri=" << LICHESS_LOGIN_REDIRECT_URI
+            << "&scope=preference:read&code_challenge_method=S256&code_challenge=" << code_challenge;
+
         return Response {
             302,
-            {{"Location", "https://lichess.org"}},
+            {{"Location", redirection.str()}},
             {},
+        };
+    }
+
+    if (request.script_name == "/api/lichess-callback") {
+        std::cerr << request.headers.find("QUERY_STRING")->first << " " << request.headers.find("QUERY_STRING")->second;
+        return Response {
+            200,
+            {{"Content-Type", "text/html"}},
+            "hello sailor",
         };
     }
 
@@ -100,6 +124,9 @@ Response handle_request(Request request) {
 }
 
 int main() {
+    // init phase
+    sqlite3_open_v2("db.db", &connection, 0, nullptr);
+
     while (FCGI_Accept() >= 0) {
         const char* query_string = std::getenv("QUERY_STRING");
         const char* request_method = std::getenv("REQUEST_METHOD");
