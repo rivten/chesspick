@@ -107,17 +107,15 @@ Response handle_request(Request request) {
         std::vector<unsigned char> bits(32);
         std::generate(std::begin(bits), std::end(bits), std::ref(rd));
 
-        std::string verifier(1024, '\0');
-        sodium_bin2base64(verifier.data(), 1024, bits.data(), bits.size(), sodium_base64_VARIANT_ORIGINAL);
-        verifier.resize(sodium_base64_encoded_len(bits.size(), sodium_base64_VARIANT_ORIGINAL));
+        std::string verifier(sodium_base64_encoded_len(bits.size(), sodium_base64_VARIANT_URLSAFE_NO_PADDING), '\0');
+        sodium_bin2base64(verifier.data(), verifier.size(), bits.data(), bits.size(), sodium_base64_VARIANT_URLSAFE_NO_PADDING);
+        std::cerr << verifier << '\n';
 
-        std::string challenge_before_base64(1024, '\0');
-        crypto_hash_sha256((unsigned char*)challenge_before_base64.data(), (const unsigned char*)verifier.c_str(), verifier.length());
-        challenge_before_base64.resize(challenge_before_base64.find('\0'));
+        std::vector<unsigned char> challenge_before_base64(crypto_hash_sha256_BYTES);
+        crypto_hash_sha256(challenge_before_base64.data(), (const unsigned char*)verifier.c_str(), verifier.size() - 1);
 
-        std::string challenge(1024, '\0');
-        sodium_bin2base64(challenge.data(), 1024, (const unsigned char*)challenge_before_base64.c_str(), challenge_before_base64.length(), sodium_base64_VARIANT_ORIGINAL);
-        challenge.resize(sodium_base64_encoded_len(challenge_before_base64.length(), sodium_base64_VARIANT_ORIGINAL));
+        std::string challenge(sodium_base64_encoded_len(challenge_before_base64.size(), sodium_base64_VARIANT_URLSAFE_NO_PADDING), '\0');
+        sodium_bin2base64(challenge.data(), challenge.size(), (const unsigned char*)challenge_before_base64.data(), challenge_before_base64.size(), sodium_base64_VARIANT_URLSAFE_NO_PADDING);
 
         sqlite3_stmt* stmt;
         std::string sql {"INSERT INTO lichess_login_verifiers (verifier, epoch) VALUES (?, unixepoch());"};
@@ -142,7 +140,6 @@ Response handle_request(Request request) {
         return Response {
             302,
             {{"Location", redirection.str()}},
-            {},
         };
     }
 
@@ -206,9 +203,10 @@ Response handle_request(Request request) {
         //headers = curl_slist_append(headers, "Content-Type: application/json");
 
         curl_easy_setopt(curl, CURLOPT_URL, "https://lichess.org/api/token");
+        // TODO: not sure why it doesn't work with just POSTFIELDS
         curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, post_data_builder.str().c_str());
         //curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-        curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
+        curl_easy_setopt(curl, CURLOPT_VERBOSE, 0);
         std::string response;
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
