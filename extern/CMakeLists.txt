@@ -50,3 +50,6 @@ add_subdirectory(curl-8.6.0)
 
 set(SODIUM_DISABLE_TESTS ON)
 include(libsodium.cmake)
+
+add_library(cjson SHARED cJSON-1.7.17/cJSON.c)
+target_include_directories(cjson INTERFACE cJSON-1.7.17)

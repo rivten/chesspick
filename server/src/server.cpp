@@ -17,6 +17,7 @@
 #include <sodium/utils.h>
 
 #include <curl/curl.h>
+#include <cJSON.h>
 
 #define CLIENT_ID "rivten.chesspick"
 #define LICHESS_LOGIN_REDIRECT_URI "http://localhost:8080/api/lichess-callback"
@@ -188,26 +189,64 @@ Response handle_request(Request request) {
 
         // TODO: delete the verifier row. it won't be used again
 
-        std::ostringstream post_data_builder;
-        post_data_builder
-            << "grant_type=authorization_code&"
-            << "redirect_uri=" << LICHESS_LOGIN_REDIRECT_URI << "&"
-            << "client_id=" << CLIENT_ID << "&"
-            << "code=" << code << "&"
-            << "code_verifier=" << verifier;
+        std::string access_token;
+        {
+            std::ostringstream post_data_builder;
+            post_data_builder
+                << "grant_type=authorization_code&"
+                << "redirect_uri=" << LICHESS_LOGIN_REDIRECT_URI << "&"
+                << "client_id=" << CLIENT_ID << "&"
+                << "code=" << code << "&"
+                << "code_verifier=" << verifier;
 
+            CURL* curl = curl_easy_init();
+            assert(curl != nullptr);
+
+            //struct curl_slist* headers = nullptr;
+            //headers = curl_slist_append(headers, "Content-Type: application/json");
+
+            curl_easy_setopt(curl, CURLOPT_URL, "https://lichess.org/api/token");
+            // TODO: not sure why it doesn't work with just POSTFIELDS
+            curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, post_data_builder.str().c_str());
+            //curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+            curl_easy_setopt(curl, CURLOPT_VERBOSE, 0);
+            std::string response;
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+                +[](void* buffer, size_t size, size_t nmemb, void* user_data) -> size_t {
+                    std::string* response = (std::string*) user_data;
+                    response->append((char*)buffer, nmemb * size);
+                    return nmemb * size;
+                });
+            CURLcode res = curl_easy_perform(curl);
+            //std::cerr << curl_easy_strerror(res) << '\n';
+            assert(res == CURLE_OK);
+            curl_easy_cleanup(curl);
+
+            cJSON* json = cJSON_ParseWithLength(response.c_str(), response.size());
+
+            char* out = cJSON_Print(json);
+            std::cerr << out << '\n';
+
+            cJSON_free(out);
+
+            cJSON* access_token_json = cJSON_GetObjectItemCaseSensitive(json, "access_token");
+            access_token = std::string{access_token_json->valuestring};
+
+            cJSON_Delete(json);
+        }
+
+        // get lichess user
+        std::ostringstream header;
+        header << "Authorization: Bearer " << access_token;
         CURL* curl = curl_easy_init();
         assert(curl != nullptr);
+        curl_easy_setopt(curl, CURLOPT_URL, "https://lichess.org/api/account");
+        struct curl_slist* headers = nullptr;
+        headers = curl_slist_append(headers, header.str().c_str());
 
-        //struct curl_slist* headers = nullptr;
-        //headers = curl_slist_append(headers, "Content-Type: application/json");
-
-        curl_easy_setopt(curl, CURLOPT_URL, "https://lichess.org/api/token");
-        // TODO: not sure why it doesn't work with just POSTFIELDS
-        curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, post_data_builder.str().c_str());
-        //curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-        curl_easy_setopt(curl, CURLOPT_VERBOSE, 0);
         std::string response;
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
             +[](void* buffer, size_t size, size_t nmemb, void* user_data) -> size_t {
@@ -220,12 +259,10 @@ Response handle_request(Request request) {
         assert(res == CURLE_OK);
         curl_easy_cleanup(curl);
 
-        std::cerr << response << '\n';
-
         return Response {
             200,
             {{"Content-Type", "text/html"}},
-            "hello sailor",
+            response,
         };
     }
 

@@ -23,5 +23,10 @@ get-libsodium:
     mv extern/libsodium-1.0.18-RELEASE extern/libsodium
     rm extern/libsodium-1.0.18.tar.gz
 
+get-cjson:
+    curl -o extern/cjson.tar.gz https://codeload.github.com/DaveGamble/cJSON/tar.gz/refs/tags/v1.7.17
+    tar xvf extern/cjson.tar.gz --directory=extern/
+    rm extern/cjson.tar.gz
+
 serve:
     lighttpd -D -f config/lighttpd.conf
