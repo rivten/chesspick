@@ -16,7 +16,7 @@
 #include <sodium/crypto_hash_sha256.h>
 #include <sodium/utils.h>
 
-#include <filesystem>
+#include <curl/curl.h>
 
 #define CLIENT_ID "rivten.chesspick"
 #define LICHESS_LOGIN_REDIRECT_URI "http://localhost:8080/api/lichess-callback"
@@ -136,8 +136,8 @@ Response handle_request(Request request) {
 
         redirection << "https://lichess.org/oauth?response_type=code&client_id=" 
             << CLIENT_ID << "&redirect_uri=" << LICHESS_LOGIN_REDIRECT_URI
-            << "&scope=preference:read&code_challenge_method=S256&code_challenge=" << challenge
-            << "&state=" << state;
+            << "&state=" << state
+            << "&scope=preference:read&code_challenge_method=S256&code_challenge=" << challenge;
 
         return Response {
             302,
@@ -147,7 +147,83 @@ Response handle_request(Request request) {
     }
 
     if (request.script_name == "/api/lichess-callback") {
-        std::cerr << request.headers.find("QUERY_STRING")->first << " " << request.headers.find("QUERY_STRING")->second;
+        std::string query_string = request.headers.find("QUERY_STRING")->second;
+
+        std::string code;
+        std::string state;
+
+        size_t p = -1;
+        do {
+            p++;
+            size_t next_p = query_string.find('&', p);
+            std::string s = query_string.substr(p, next_p - p);
+
+            size_t eql = s.find('=');
+            std::string param = s.substr(0, eql);
+            if (param == "code") {
+                code = s.substr(eql + 1);
+            } else if (param == "state") {
+                state = s.substr(eql + 1);
+            }
+
+            p = next_p;
+        } while (p != std::string::npos);
+
+        assert(code.size() != 0);
+        assert(state.size() != 0);
+
+        sqlite3_stmt* stmt;
+        std::string sql {"SELECT verifier FROM lichess_login_verifiers WHERE id = ?;"};
+
+        int prepare_result = sqlite3_prepare_v2(db_connection, sql.c_str(), sql.size(), &stmt, nullptr);
+        assert(prepare_result == SQLITE_OK);
+
+        int bind_result = sqlite3_bind_text(stmt, 1, state.c_str(), state.size(), SQLITE_STATIC);
+        assert(bind_result == SQLITE_OK);
+
+        int step_result = sqlite3_step(stmt);
+        assert(step_result == SQLITE_ROW);
+        std::string verifier {(const char*)sqlite3_column_text(stmt, 0)};
+        std::cerr << verifier << '\n';
+
+        int finalize_result = sqlite3_finalize(stmt);
+        assert(finalize_result == SQLITE_OK);
+
+        // TODO: delete the verifier row. it won't be used again
+
+        std::ostringstream post_data_builder;
+        post_data_builder
+            << "grant_type=authorization_code&"
+            << "redirect_uri=" << LICHESS_LOGIN_REDIRECT_URI << "&"
+            << "client_id=" << CLIENT_ID << "&"
+            << "code=" << code << "&"
+            << "code_verifier=" << verifier;
+
+        CURL* curl = curl_easy_init();
+        assert(curl != nullptr);
+
+        //struct curl_slist* headers = nullptr;
+        //headers = curl_slist_append(headers, "Content-Type: application/json");
+
+        curl_easy_setopt(curl, CURLOPT_URL, "https://lichess.org/api/token");
+        curl_easy_setopt(curl, CURLOPT_COPYPOSTFIELDS, post_data_builder.str().c_str());
+        //curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
+        std::string response;
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+            +[](void* buffer, size_t size, size_t nmemb, void* user_data) -> size_t {
+                std::string* response = (std::string*) user_data;
+                response->append((char*)buffer, nmemb * size);
+                return nmemb * size;
+            });
+        CURLcode res = curl_easy_perform(curl);
+        //std::cerr << curl_easy_strerror(res) << '\n';
+        assert(res == CURLE_OK);
+        curl_easy_cleanup(curl);
+
+        std::cerr << response << '\n';
+
         return Response {
             200,
             {{"Content-Type", "text/html"}},
@@ -166,6 +242,8 @@ int main() {
     int open_result = sqlite3_open_v2("../../db.db", &db_connection, SQLITE_OPEN_READWRITE, nullptr);
     assert(open_result == SQLITE_OK);
     assert(db_connection != nullptr);
+
+    curl_global_init(CURL_GLOBAL_ALL);
 
     while (FCGI_Accept() >= 0) {
         const char* query_string = std::getenv("QUERY_STRING");
