@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS lichess_login_verifiers (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, 
+    verifier TEXT NOT NULL,
+    epoch INTEGER NOT NULL
+) STRICT;

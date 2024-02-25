@@ -3,4 +3,6 @@ static/htm.mjs
 build/
 extern/curl-8.6.0
 extern/fcgi2-2.4.2
+extern/libsodium
 extern/sqlite-amalgamation-3450100
+*.db

@@ -8,8 +8,15 @@
 #include <unordered_map>
 #include <format>
 #include <sstream>
+#include <vector>
+#include <random>
+#include <algorithm>
 
 #include <sqlite3.h>
+#include <sodium/crypto_hash_sha256.h>
+#include <sodium/utils.h>
+
+#include <filesystem>
 
 #define CLIENT_ID "rivten.chesspick"
 #define LICHESS_LOGIN_REDIRECT_URI "http://localhost:8080/api/lichess-callback"
@@ -19,7 +26,7 @@ extern char** environ;
 #define BUFFER_SIZE 1024
 char buffer[BUFFER_SIZE];
 
-sqlite3* connection;
+sqlite3* db_connection;
 
 static std::unordered_map<std::string, std::string> get_headers() {
     std::unordered_map<std::string, std::string> headers;
@@ -95,10 +102,42 @@ Response handle_request(Request request) {
 
     if (request.script_name == "/api/login") {
         std::ostringstream redirection;
-        int code_challenge = 0;
+
+        std::random_device rd;
+        std::vector<unsigned char> bits(32);
+        std::generate(std::begin(bits), std::end(bits), std::ref(rd));
+
+        std::string verifier(1024, '\0');
+        sodium_bin2base64(verifier.data(), 1024, bits.data(), bits.size(), sodium_base64_VARIANT_ORIGINAL);
+        verifier.resize(sodium_base64_encoded_len(bits.size(), sodium_base64_VARIANT_ORIGINAL));
+
+        std::string challenge_before_base64(1024, '\0');
+        crypto_hash_sha256((unsigned char*)challenge_before_base64.data(), (const unsigned char*)verifier.c_str(), verifier.length());
+        challenge_before_base64.resize(challenge_before_base64.find('\0'));
+
+        std::string challenge(1024, '\0');
+        sodium_bin2base64(challenge.data(), 1024, (const unsigned char*)challenge_before_base64.c_str(), challenge_before_base64.length(), sodium_base64_VARIANT_ORIGINAL);
+        challenge.resize(sodium_base64_encoded_len(challenge_before_base64.length(), sodium_base64_VARIANT_ORIGINAL));
+
+        sqlite3_stmt* stmt;
+        std::string sql {"INSERT INTO lichess_login_verifiers (verifier, epoch) VALUES (?, unixepoch());"};
+        int prepare_result = sqlite3_prepare_v2(db_connection, sql.c_str(), sql.length(), &stmt, nullptr);
+        assert(prepare_result == SQLITE_OK);
+
+        int bind_result = sqlite3_bind_text(stmt, 1, verifier.c_str(), verifier.length(), SQLITE_STATIC);
+        assert(bind_result == SQLITE_OK);
+        int step_result = sqlite3_step(stmt);
+        assert(step_result == SQLITE_DONE);
+
+        int finalize_result = sqlite3_finalize(stmt);
+        assert(finalize_result == SQLITE_OK);
+
+        int state = sqlite3_last_insert_rowid(db_connection);
+
         redirection << "https://lichess.org/oauth?response_type=code&client_id=" 
             << CLIENT_ID << "&redirect_uri=" << LICHESS_LOGIN_REDIRECT_URI
-            << "&scope=preference:read&code_challenge_method=S256&code_challenge=" << code_challenge;
+            << "&scope=preference:read&code_challenge_method=S256&code_challenge=" << challenge
+            << "&state=" << state;
 
         return Response {
             302,
@@ -124,8 +163,9 @@ Response handle_request(Request request) {
 }
 
 int main() {
-    // init phase
-    sqlite3_open_v2("db.db", &connection, 0, nullptr);
+    int open_result = sqlite3_open_v2("../../db.db", &db_connection, SQLITE_OPEN_READWRITE, nullptr);
+    assert(open_result == SQLITE_OK);
+    assert(db_connection != nullptr);
 
     while (FCGI_Accept() >= 0) {
         const char* query_string = std::getenv("QUERY_STRING");

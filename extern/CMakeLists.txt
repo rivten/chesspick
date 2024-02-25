@@ -1,6 +1,6 @@
 project(extern)
 file(COPY fcgi_config.h DESTINATION fcgi2-2.4.2/include)
-add_library(fcgi SHARED 
+add_library(fcgi OBJECT 
     fcgi2-2.4.2/libfcgi/fcgiapp.c
     fcgi2-2.4.2/libfcgi/fcgio.cpp
     fcgi2-2.4.2/libfcgi/fcgi_stdio.c
@@ -10,7 +10,7 @@ add_library(fcgi SHARED
 target_include_directories(fcgi PUBLIC fcgi2-2.4.2/include)
 target_include_directories(fcgi PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/fcgi2-2.4.2/include)
 
-add_library(sqlite SHARED sqlite-amalgamation-3450100/sqlite3.c)
+add_library(sqlite OBJECT sqlite-amalgamation-3450100/sqlite3.c)
 target_include_directories(sqlite INTERFACE sqlite-amalgamation-3450100)
 
 set(BUILD_CURL_EXE OFF)
@@ -47,3 +47,6 @@ set(BUILD_LIBCURL_DOCS OFF)
 set(ENABLE_CURL_MANUAL OFF)
 
 add_subdirectory(curl-8.6.0)
+
+set(SODIUM_DISABLE_TESTS ON)
+include(libsodium.cmake)

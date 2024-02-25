@@ -17,5 +17,11 @@ get-curl:
     tar xvf extern/curl-8.6.0.tar.gz --directory=extern/
     rm extern/curl-8.6.0.tar.gz
 
+get-libsodium:
+    curl -o extern/libsodium-1.0.18.tar.gz https://codeload.github.com/jedisct1/libsodium/tar.gz/refs/tags/1.0.18-RELEASE
+    tar xvf extern/libsodium-1.0.18.tar.gz --directory=extern/
+    mv extern/libsodium-1.0.18-RELEASE extern/libsodium
+    rm extern/libsodium-1.0.18.tar.gz
+
 serve:
     lighttpd -D -f config/lighttpd.conf
