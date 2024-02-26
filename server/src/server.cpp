@@ -64,7 +64,7 @@ struct Request {
 
 struct Response {
     size_t status;
-    std::unordered_map<std::string, std::string> headers;
+    std::vector<std::string> headers;
     std::string content;
 };
 
@@ -94,9 +94,12 @@ static HttpMethod parse_http_method(const char* method_str) {
 
 Response handle_request(Request request) {
     if (request.path == "/api/pick") {
+        for (const auto& [name, value]: request.headers) {
+            std::cerr << name << ": " << value << '\n';
+        }
         return Response {
             201,
-            {{"Content-Type", "application/json"}},
+            {"Content-Type: application/json"},
             std::format("\"{}\"", request.content),
         };
     }
@@ -143,7 +146,7 @@ Response handle_request(Request request) {
 
         return Response {
             302,
-            {{"Location", redirection.str()}},
+            {std::format("Location: {}", redirection.str())},
         };
     }
 
@@ -153,9 +156,14 @@ Response handle_request(Request request) {
         std::string code;
         std::string state;
 
-        size_t p = -1;
+        size_t p = 0;
+        bool done_once = false;
         do {
-            p++;
+            if (done_once) {
+                p++;
+            } else {
+                done_once = true;
+            }
             size_t next_p = query_string.find('&', p);
             std::string s = query_string.substr(p, next_p - p);
 
@@ -193,6 +201,7 @@ Response handle_request(Request request) {
         // TODO: delete the verifier row. it won't be used again
 
         std::string access_token;
+        int expires_in;
         {
             const std::string scheme = request.headers.find("REQUEST_SCHEME")->second;
             const std::string host = request.headers.find("HTTP_HOST")->second;
@@ -239,36 +248,44 @@ Response handle_request(Request request) {
             cJSON* access_token_json = cJSON_GetObjectItemCaseSensitive(json, "access_token");
             access_token = std::string{access_token_json->valuestring};
 
+            cJSON* expires_in_json = cJSON_GetObjectItemCaseSensitive(json, "expires_in");
+            expires_in = expires_in_json->valueint;
+
             cJSON_Delete(json);
         }
 
         // get lichess user
-        std::ostringstream header;
-        header << "Authorization: Bearer " << access_token;
-        CURL* curl = curl_easy_init();
-        assert(curl != nullptr);
-        curl_easy_setopt(curl, CURLOPT_URL, "https://lichess.org/api/account");
-        struct curl_slist* headers = nullptr;
-        headers = curl_slist_append(headers, header.str().c_str());
+        //std::ostringstream header;
+        //header << "Authorization: Bearer " << access_token;
+        //CURL* curl = curl_easy_init();
+        //assert(curl != nullptr);
+        //curl_easy_setopt(curl, CURLOPT_URL, "https://lichess.org/api/account");
+        //struct curl_slist* headers = nullptr;
+        //headers = curl_slist_append(headers, header.str().c_str());
 
-        std::string response;
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
-            +[](void* buffer, size_t size, size_t nmemb, void* user_data) -> size_t {
-                std::string* response = (std::string*) user_data;
-                response->append((char*)buffer, nmemb * size);
-                return nmemb * size;
-            });
-        CURLcode res = curl_easy_perform(curl);
-        //std::cerr << curl_easy_strerror(res) << '\n';
-        assert(res == CURLE_OK);
-        curl_easy_cleanup(curl);
+        //std::string response;
+        //curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        //curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+        //curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+        //    +[](void* buffer, size_t size, size_t nmemb, void* user_data) -> size_t {
+        //        std::string* response = (std::string*) user_data;
+        //        response->append((char*)buffer, nmemb * size);
+        //        return nmemb * size;
+        //    });
+        //CURLcode res = curl_easy_perform(curl);
+        ////std::cerr << curl_easy_strerror(res) << '\n';
+        //assert(res == CURLE_OK);
+        //curl_easy_cleanup(curl);
+
+        std::vector<std::string> headers;
+        headers.push_back("Location: /");
+        headers.push_back(std::format("Set-Cookie: Authorization=\"Bearer {}\"; Secure; HttpOnly; Max-Age={}", access_token, expires_in));
+        headers.push_back(std::format("Set-Cookie: chesspick_loggedin=1; Max-Age={}", expires_in));
+
 
         return Response {
-            200,
-            {{"Content-Type", "text/html"}},
-            response,
+            302,
+            std::move(headers),
         };
     }
 
@@ -321,11 +338,11 @@ int main() {
 
         std::ostringstream response_headers;
 
-        for (auto& [header_name, header_value]: response.headers) {
-            response_headers << header_name << ":" << header_value;
+        for (const std::string& header : response.headers) {
+            response_headers << header << '\n';
         }
 
-        FCGI_printf("Status: %u\r\n%s\r\n\r\n%s\n", response.status, response_headers.str().c_str(), response.content.c_str());
+        FCGI_printf("Status: %u\n%s\n\n%s", response.status, response_headers.str().c_str(), response.content.c_str());
     }
     return 0;
 }
