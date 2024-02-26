@@ -20,7 +20,7 @@
 #include <cJSON.h>
 
 #define CLIENT_ID "rivten.chesspick"
-#define LICHESS_LOGIN_REDIRECT_URI "http://localhost:8080/api/lichess-callback"
+#define LICHESS_LOGIN_REDIRECT_URI "/api/lichess-callback"
 
 extern char** environ;
 
@@ -57,7 +57,7 @@ struct Request {
     std::string content;
     std::unordered_map<std::string, std::string> headers;
     std::string query_string;
-    std::string script_name;
+    std::string path;
     std::string content_type;
     std::string accept;
 };
@@ -93,7 +93,7 @@ static HttpMethod parse_http_method(const char* method_str) {
 }
 
 Response handle_request(Request request) {
-    if (request.script_name == "/api/pick") {
+    if (request.path == "/api/pick") {
         return Response {
             201,
             {{"Content-Type", "application/json"}},
@@ -101,7 +101,7 @@ Response handle_request(Request request) {
         };
     }
 
-    if (request.script_name == "/api/login") {
+    if (request.path == "/api/login") {
         std::ostringstream redirection;
 
         std::random_device rd;
@@ -119,22 +119,25 @@ Response handle_request(Request request) {
         sodium_bin2base64(challenge.data(), challenge.size(), (const unsigned char*)challenge_before_base64.data(), challenge_before_base64.size(), sodium_base64_VARIANT_URLSAFE_NO_PADDING);
 
         sqlite3_stmt* stmt;
-        std::string sql {"INSERT INTO lichess_login_verifiers (verifier, epoch) VALUES (?, unixepoch());"};
-        int prepare_result = sqlite3_prepare_v2(db_connection, sql.c_str(), sql.length(), &stmt, nullptr);
+        const std::string sql {"INSERT INTO lichess_login_verifiers (verifier, epoch) VALUES (?, unixepoch());"};
+        const int prepare_result = sqlite3_prepare_v2(db_connection, sql.c_str(), sql.length(), &stmt, nullptr);
         assert(prepare_result == SQLITE_OK);
 
-        int bind_result = sqlite3_bind_text(stmt, 1, verifier.c_str(), verifier.length(), SQLITE_STATIC);
+        const int bind_result = sqlite3_bind_text(stmt, 1, verifier.c_str(), verifier.length(), SQLITE_STATIC);
         assert(bind_result == SQLITE_OK);
-        int step_result = sqlite3_step(stmt);
+        const int step_result = sqlite3_step(stmt);
         assert(step_result == SQLITE_DONE);
 
-        int finalize_result = sqlite3_finalize(stmt);
+        const int finalize_result = sqlite3_finalize(stmt);
         assert(finalize_result == SQLITE_OK);
 
-        int state = sqlite3_last_insert_rowid(db_connection);
+        const int state = sqlite3_last_insert_rowid(db_connection);
+
+        const std::string scheme = request.headers.find("REQUEST_SCHEME")->second;
+        const std::string host = request.headers.find("HTTP_HOST")->second;
 
         redirection << "https://lichess.org/oauth?response_type=code&client_id=" 
-            << CLIENT_ID << "&redirect_uri=" << LICHESS_LOGIN_REDIRECT_URI
+            << CLIENT_ID << "&redirect_uri=" << scheme << "://" << host << LICHESS_LOGIN_REDIRECT_URI
             << "&state=" << state
             << "&scope=preference:read&code_challenge_method=S256&code_challenge=" << challenge;
 
@@ -144,7 +147,7 @@ Response handle_request(Request request) {
         };
     }
 
-    if (request.script_name == "/api/lichess-callback") {
+    if (request.path == "/api/lichess-callback") {
         std::string query_string = request.headers.find("QUERY_STRING")->second;
 
         std::string code;
@@ -191,10 +194,13 @@ Response handle_request(Request request) {
 
         std::string access_token;
         {
+            const std::string scheme = request.headers.find("REQUEST_SCHEME")->second;
+            const std::string host = request.headers.find("HTTP_HOST")->second;
+
             std::ostringstream post_data_builder;
             post_data_builder
                 << "grant_type=authorization_code&"
-                << "redirect_uri=" << LICHESS_LOGIN_REDIRECT_URI << "&"
+                << "redirect_uri=" << scheme << "://" << host << LICHESS_LOGIN_REDIRECT_URI << "&"
                 << "client_id=" << CLIENT_ID << "&"
                 << "code=" << code << "&"
                 << "code_verifier=" << verifier;
@@ -283,7 +289,7 @@ int main() {
     while (FCGI_Accept() >= 0) {
         const char* query_string = std::getenv("QUERY_STRING");
         const char* request_method = std::getenv("REQUEST_METHOD");
-        const char* script_name = std::getenv("SCRIPT_NAME");
+        const char* path = std::getenv("SCRIPT_NAME");
         const char* accept = std::getenv("HTTP_ACCEPT");
         const char* content_type = std::getenv("CONTENT_TYPE");
         const char* content_length_str = std::getenv("CONTENT_LENGTH");
@@ -306,7 +312,7 @@ int main() {
             content_length_str ? std::string(buffer) : "",
             get_headers(),
             query_string ? std::string(query_string) : "",
-            script_name ? std::string(script_name) : "",
+            path ? std::string(path) : "",
             content_type ? std::string(content_type) : "",
             accept ? std::string(accept) : "",
         };
