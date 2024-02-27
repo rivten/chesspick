@@ -93,7 +93,7 @@ static HttpMethod parse_http_method(const char* method_str) {
 }
 
 Response handle_request(Request request) {
-    if (request.path == "/api/pick") {
+    if (request.method == HttpMethod::Post && request.path == "/api/pick") {
         for (const auto& [name, value]: request.headers) {
             std::cerr << name << ": " << value << '\n';
         }
@@ -104,7 +104,7 @@ Response handle_request(Request request) {
         };
     }
 
-    if (request.path == "/api/login") {
+    if (request.method == HttpMethod::Get && request.path == "/api/login") {
         std::ostringstream redirection;
 
         std::random_device rd;
@@ -150,7 +150,7 @@ Response handle_request(Request request) {
         };
     }
 
-    if (request.path == "/api/lichess-callback") {
+    if (request.method == HttpMethod::Get && request.path == LICHESS_LOGIN_REDIRECT_URI) {
         std::string query_string = request.headers.find("QUERY_STRING")->second;
 
         std::string code;
@@ -280,7 +280,7 @@ Response handle_request(Request request) {
         std::vector<std::string> headers;
         headers.push_back("Location: /");
         headers.push_back(std::format("Set-Cookie: Authorization=\"Bearer {}\"; Secure; HttpOnly; Max-Age={}", access_token, expires_in));
-        headers.push_back(std::format("Set-Cookie: chesspick_loggedin=1; Max-Age={}", expires_in));
+        headers.push_back(std::format("Set-Cookie: chesspick_loggedin=1; Max-Age={}; Path=/", expires_in));
 
 
         return Response {
